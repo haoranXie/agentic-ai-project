@@ -1,0 +1,37 @@
+agent_parameters:
+  agent_a:
+    name: "AgentA"
+    tone: "neutral"
+    response_time: 1.0
+    role: "compatibility_tone_mapper"
+  agent_b:
+    name: "AgentB" 
+    tone: "empathetic"
+    response_time: 1.5
+    role: "drift_monitor"
+
+emotional_drift:
+  threshold: 0.5
+  check_interval: 10
+  recursion_threshold: 2
+  coherence_loss_threshold: 3
+
+biometric_simulation:
+  hrv_baseline: 50
+  hrv_variance: 15
+  stress_threshold: 35
+
+openai:
+  api_key: "Insert-Key-Here"
+  model: "gpt-3.5-turbo"
+  temperature: 0.7
+  max_tokens: 150
+
+logging:
+  level: "INFO"
+  file: "logs/agentic_ai.log"
+
+simulation:
+  max_iterations: 100
+  demo_mode: true
+  dialogue_timeout: 30
