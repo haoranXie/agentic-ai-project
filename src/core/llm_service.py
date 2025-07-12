@@ -118,10 +118,19 @@ Be natural, conversational, and vary your responses based on the context.
                 max_tokens=self.max_tokens
             )
             
-            return response.choices[0].message.content.strip()
+            # Debug: Check response structure
+            if not hasattr(response, 'choices'):
+                raise Exception(f"OpenAI response has no choices attribute. Response type: {type(response)}")
+            
+            # Check if response has choices before accessing
+            if response.choices and len(response.choices) > 0:
+                return response.choices[0].message.content.strip()
+            else:
+                raise Exception(f"OpenAI response has empty choices list. Choices length: {len(response.choices) if response.choices else 'None'}")
             
         except Exception as e:
             # Fallback to template response if OpenAI fails
+            print(f"OpenAI service error, using fallback: {e}")
             return self._fallback_agent_a_response(emotional_analysis)
 
     def get_agent_b_intervention(self, user_input: str, emotional_analysis: Dict, monitoring_result: Dict) -> Optional[str]:
@@ -160,10 +169,15 @@ As Agent B (the monitoring agent), provide a brief, gentle intervention to help 
                 max_tokens=100
             )
             
-            return response.choices[0].message.content.strip()
+            # Check if response has choices before accessing
+            if response.choices and len(response.choices) > 0:
+                return response.choices[0].message.content.strip()
+            else:
+                raise Exception("No choices in OpenAI response")
             
         except Exception as e:
             # Fallback intervention
+            print(f"OpenAI Agent B service error, using fallback: {e}")
             return self._fallback_agent_b_intervention(emotional_analysis)
 
     def enhance_emotional_analysis(self, user_input: str, conversation_history: List[Dict]) -> Dict:
@@ -188,17 +202,22 @@ As Agent B (the monitoring agent), provide a brief, gentle intervention to help 
                 max_tokens=200
             )
             
-            # Parse the JSON response
-            import json
-            try:
-                analysis = json.loads(response.choices[0].message.content.strip())
-                return analysis
-            except json.JSONDecodeError:
-                # Fallback to basic analysis if JSON parsing fails
-                return self._fallback_emotional_analysis(user_input)
+            # Check if response has choices before accessing
+            if response.choices and len(response.choices) > 0:
+                # Parse the JSON response
+                import json
+                try:
+                    analysis = json.loads(response.choices[0].message.content.strip())
+                    return analysis
+                except json.JSONDecodeError:
+                    # Fallback to basic analysis if JSON parsing fails
+                    return self._fallback_emotional_analysis(user_input)
+            else:
+                raise Exception("No choices in OpenAI response")
                 
         except Exception as e:
             # Fallback to rule-based analysis
+            print(f"OpenAI emotional analysis error, using fallback: {e}")
             return self._fallback_emotional_analysis(user_input)
 
     def generate_conversation_summary(self, conversation_history: List[Dict]) -> Dict:
@@ -235,11 +254,15 @@ Provide analysis in this JSON format:
                 max_tokens=300
             )
             
-            import json
-            try:
-                return json.loads(response.choices[0].message.content.strip())
-            except json.JSONDecodeError:
-                return {"summary": "Analysis unavailable", "key_themes": [], "emotional_arc": []}
+            # Check if response has choices before accessing
+            if response.choices and len(response.choices) > 0:
+                import json
+                try:
+                    return json.loads(response.choices[0].message.content.strip())
+                except json.JSONDecodeError:
+                    return {"summary": "Analysis unavailable", "key_themes": [], "emotional_arc": []}
+            else:
+                raise Exception("No choices in OpenAI response")
                 
         except Exception as e:
             return {"summary": "Analysis unavailable", "key_themes": [], "emotional_arc": []}
@@ -268,7 +291,10 @@ Provide analysis in this JSON format:
         """Format conversation history for LLM prompts"""
         
         formatted = []
-        for entry in history[-5:]:  # Last 5 entries
+        # Safe slicing - get last 5 entries
+        recent_history = history[-5:] if len(history) >= 5 else history
+        
+        for entry in recent_history:
             if isinstance(entry, dict):
                 if 'interaction' in entry:
                     formatted.append(f"User: {entry['interaction']}")
@@ -288,13 +314,16 @@ Provide analysis in this JSON format:
         max_turns = min(len(recent_interactions), 3)  # Last 3 conversation turns
         
         for i in range(max_turns):
-            if i < len(recent_interactions):
-                user_input = recent_interactions[-(max_turns-i)].get('input', recent_interactions[-(max_turns-i)].get('interaction', ''))
+            # Safe indexing for interactions
+            interaction_index = -(max_turns-i)
+            if abs(interaction_index) <= len(recent_interactions):
+                interaction = recent_interactions[interaction_index]
+                user_input = interaction.get('input', interaction.get('interaction', ''))
                 formatted.append(f"User: {user_input}")
                 
-            # Find corresponding agent response
-            if i < len(recent_responses):
-                agent_resp = recent_responses[-(max_turns-i)]
+            # Safe indexing for responses
+            if abs(interaction_index) <= len(recent_responses):
+                agent_resp = recent_responses[interaction_index]
                 agent_name = agent_resp.get('agent_name', 'Agent')
                 response_text = agent_resp.get('response', '')
                 formatted.append(f"{agent_name}: {response_text}")
@@ -365,7 +394,12 @@ Provide analysis in this JSON format:
                 messages=[{"role": "user", "content": "Test connection"}],
                 max_tokens=10
             )
-            return True
+            # Check if response has choices
+            if response.choices and len(response.choices) > 0:
+                return True
+            else:
+                print("OpenAI API returned empty response (no choices)")
+                return False
         except Exception as e:
             print(f"OpenAI API connection failed: {e}")
             return False

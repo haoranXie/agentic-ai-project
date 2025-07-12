@@ -49,7 +49,7 @@ class AgenticAISystem:
         self.demo_scenarios = [
             "I'm feeling great today, everything is going well!",
             "Actually, I'm not sure... maybe I'm not feeling that great",
-            "I keep thinking about this over and over, I can't stop worrying about it"
+            "Wait... what? I can't focus... my thoughts are all jumbled up and nothing makes sense anymore"
         ]
 
     def print_colored(self, text: str, color: str = "white", style: str = "normal"):
@@ -206,7 +206,7 @@ class AgenticAISystem:
         print(f"\nConversation:")
         print(f"   • Total Turns: {conv_summary['total_turns']}")
         print(f"   • Recursion Events: {conv_summary['recursion_count']}")
-        print(f"   • Emotional Progression: {' → '.join(conv_summary['emotional_progression'][-5:])}")
+        print(f"   • Emotional Progression: {' → '.join(conv_summary['emotional_progression'][-5:]) if conv_summary['emotional_progression'] else 'None'}")
 
     def run_demo_mode(self):
         """Run automated demo with predefined scenarios"""

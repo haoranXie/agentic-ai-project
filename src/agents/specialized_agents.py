@@ -184,7 +184,7 @@ class AgentB(BaseAgent):
             self.llm_available = False
 
     def monitor_emotional_drift(self, conversation_history: List[Dict], emotional_analysis: Dict) -> Dict:
-        """Monitor conversation for emotional drift patterns"""
+        """Monitor conversation using AI analysis and output specific predefined notifications"""
         
         monitoring_result = {
             "monitoring_active": self.monitoring_active,
@@ -194,47 +194,37 @@ class AgentB(BaseAgent):
             "recommendations": []
         }
         
-        if not self.monitoring_active:
+        if not self.monitoring_active or len(conversation_history) < 1:
             return monitoring_result
         
-        # Check for various concerning patterns
-        concerns = []
         alerts = []
         
-        # Recursion detection - HIGH PRIORITY
-        if emotional_analysis.get("recursion_detected"):
-            concerns.append("recursion")
-            turn_num = emotional_analysis.get('turn_number', len(conversation_history))
-            alerts.append(f"Recursion Detected at Turn {turn_num}")
+        # Use AI-powered analysis if available, otherwise fall back to basic detection
+        if self.llm_service and self.llm_available:
+            ai_detected_issues = self._ai_powered_monitoring(conversation_history)
             
-        # Emotional drift detection
-        if emotional_analysis.get("drift_detected"):
-            concerns.append("emotional_drift")
-            turn_num = emotional_analysis.get('turn_number', len(conversation_history))
-            alerts.append(f"Emotional Drift Detected at Turn {turn_num}")
-        
-        # Contradiction detection - emotional inconsistency
-        if emotional_analysis.get("contradiction_detected"):
-            concerns.append("contradiction")
-            alerts.append("Emotional Contradiction Detected")
-        
-        # Coherence loss - CRITICAL
-        if emotional_analysis.get("coherence_status") == "coherence_lost":
-            concerns.append("coherence_lost")
-            alerts.append("Coherence Lost – Recommend Pause")
-        
-        # Sudden tone shifts (check conversation history for patterns)
-        if len(conversation_history) >= 2:
-            if self._detect_sudden_tone_shift(conversation_history):
-                concerns.append("tone_shift")
-                alerts.append("Sudden Tone Shift Detected")
+            # Map AI findings to specific predefined notifications
+            if "recursion" in ai_detected_issues:
+                turn_num = len(conversation_history)
+                alerts.append(f"Recursion Detected at Turn {turn_num}")
+            
+            if "contradiction" in ai_detected_issues:
+                alerts.append("Emotional Contradiction Detected")
+            
+            if "coherence_loss" in ai_detected_issues:
+                alerts.append("Coherence Lost – Recommend Pause")
+                
+        else:
+            # Basic fallback detection (simplified)
+            alerts = self._basic_fallback_detection(conversation_history)
         
         monitoring_result["alerts_generated"] = alerts
         
-        # Determine if Agent B should output an alert
-        if concerns:
-            monitoring_result["concern_level"] = "high" if "coherence_lost" in concerns else "medium"
+        # Increment the alert counter for each alert generated
+        if alerts:
+            self.alerts_generated += len(alerts)
             monitoring_result["intervention_needed"] = True
+            monitoring_result["concern_level"] = "medium"
         
         return monitoring_result
 
@@ -271,40 +261,105 @@ class AgentB(BaseAgent):
             self.monitoring_active = not self.monitoring_active
         return self.monitoring_active
     
-    def _detect_sudden_tone_shift(self, conversation_history: List[Dict]) -> bool:
-        """Detect sudden emotional tone shifts in recent conversation"""
-        if len(conversation_history) < 2:
-            return False
-            
-        # Get last two emotional states
-        recent = conversation_history[-2:]
-        emotions = []
+    def _ai_powered_monitoring(self, conversation_history: List[Dict]) -> List[str]:
+        """Use OpenAI to intelligently analyze conversation for concerning patterns"""
         
-        for interaction in recent:
-            analysis = interaction.get('emotional_analysis', {})
-            emotion = analysis.get('emotional_state', 'neutral')
-            emotions.append(emotion)
+        # Build conversation context for AI analysis
+        conversation_turns = []
+        for i, entry in enumerate(conversation_history[-5:], 1):  # Last 5 turns max
+            user_input = entry.get('interaction', entry.get('input', '')).strip()
+            if user_input:
+                conversation_turns.append(f"Turn {i}: {user_input}")
         
-        if len(emotions) == 2:
-            # Define emotion categories for shift detection
-            positive_emotions = ['happy', 'neutral']
-            negative_emotions = ['sad', 'angry', 'anxious', 'confused']
+        if not conversation_turns:
+            return []
+        
+        conversation_text = "\n".join(conversation_turns)
+        
+        analysis_prompt = f"""Analyze this conversation for these specific patterns:
+
+{conversation_text}
+
+Look for:
+1. **RECURSION**: User repeating same worries, thoughts, or concerns across multiple turns OR explicitly mentioning repetitive thinking (e.g., "I keep thinking", "can't stop", "over and over")
+
+2. **EMOTIONAL CONTRADICTION**: Clear contradictory emotional statements within same message OR rapid emotional swings between consecutive messages (e.g., "feeling great" then "actually not feeling great")
+
+3. **COHERENCE LOSS**: User expressing confusion about their own mental state, mentioning "losing coherence", "going insane", scattered thoughts, or responses that seem genuinely incoherent
+
+Be intelligent about context - normal conversation flow is NOT concerning. Only flag genuine issues.
+
+Respond with ONLY the issues found, one per line:
+- If recursion detected: "recursion"
+- If contradiction detected: "contradiction" 
+- If coherence loss detected: "coherence_loss"
+
+If no issues, respond with: "none"
+"""
+
+        try:
+            response = self.llm_service.client.chat.completions.create(
+                model=self.llm_service.model,
+                messages=[
+                    {"role": "system", "content": "You are a clinical monitoring assistant. Analyze conversations for genuine psychological concerns. Be conservative - only flag real issues, not normal emotional fluctuations."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                temperature=0.1,  # Very low temperature for consistent analysis
+                max_tokens=50
+            )
             
-            prev_emotion, curr_emotion = emotions
-            
-            # Detect significant shifts
-            if (prev_emotion in positive_emotions and curr_emotion in negative_emotions) or \
-               (prev_emotion in negative_emotions and curr_emotion in positive_emotions):
-                return True
+            if response.choices and len(response.choices) > 0:
+                result = response.choices[0].message.content.strip().lower()
                 
-            # Detect intense emotion swings
-            intense_shifts = [
-                ('happy', 'angry'), ('happy', 'sad'), 
-                ('angry', 'happy'), ('sad', 'happy'),
-                ('neutral', 'angry'), ('neutral', 'anxious')
-            ]
-            
-            if (prev_emotion, curr_emotion) in intense_shifts:
-                return True
+                # Parse the response
+                detected_issues = []
+                if "recursion" in result:
+                    detected_issues.append("recursion")
+                if "contradiction" in result:
+                    detected_issues.append("contradiction")
+                if "coherence_loss" in result:
+                    detected_issues.append("coherence_loss")
                 
-        return False
+                return detected_issues
+            else:
+                return []
+                
+        except Exception as e:
+            print(f"AI monitoring failed, using fallback: {e}")
+            return []
+
+    def _basic_fallback_detection(self, conversation_history: List[Dict]) -> List[str]:
+        """Basic fallback detection when AI is unavailable"""
+        alerts = []
+        
+        if not conversation_history:
+            return alerts
+        
+        current_entry = conversation_history[-1]
+        current_input = current_entry.get('interaction', current_entry.get('input', '')).lower()
+        
+        # Very basic keyword detection as last resort
+        
+        # Recursion - only explicit mentions
+        recursion_phrases = ["keep thinking", "can't stop", "over and over", "again and again"]
+        if any(phrase in current_input for phrase in recursion_phrases):
+            turn_num = len(conversation_history)
+            alerts.append(f"Recursion Detected at Turn {turn_num}")
+        
+        # Contradiction - only obvious cases
+        if len(conversation_history) >= 2:
+            prev_entry = conversation_history[-2]
+            prev_input = prev_entry.get('interaction', prev_entry.get('input', '')).lower()
+            
+            prev_positive = any(word in prev_input for word in ["great", "good", "fine"])
+            current_negative = "not" in current_input and any(word in current_input for word in ["great", "good", "fine"])
+            
+            if prev_positive and current_negative:
+                alerts.append("Emotional Contradiction Detected")
+        
+        # Coherence loss - explicit mentions
+        coherence_phrases = ["going insane", "losing my mind", "coherence is lost", "losing coherence"]
+        if any(phrase in current_input for phrase in coherence_phrases):
+            alerts.append("Coherence Lost – Recommend Pause")
+        
+        return alerts

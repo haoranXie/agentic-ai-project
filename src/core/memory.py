@@ -93,29 +93,29 @@ class Memory:
             }
 
     def _update_stress_level(self, emotional_analysis: Dict):
-        """Update stress level based on emotional analysis"""
+        """Update stress level based on emotional analysis - MORE CONSERVATIVE"""
         stress_factors = {
-            "angry": 0.8,
-            "anxious": 0.9,
-            "sad": 0.6,
-            "confused": 0.5,
-            "happy": -0.2,
-            "neutral": -0.1
+            "angry": 0.6,      # Reduced from 0.8
+            "anxious": 0.7,    # Reduced from 0.9  
+            "sad": 0.4,        # Reduced from 0.6
+            "confused": 0.3,   # Reduced from 0.5
+            "happy": -0.3,     # Increased recovery
+            "neutral": -0.2    # Increased recovery
         }
         
         emotional_state = emotional_analysis.get("emotional_state", "neutral")
         base_stress = stress_factors.get(emotional_state, 0.0)
         
-        # Additional stress from coherence issues
+        # Much more conservative stress from coherence issues
         if emotional_analysis.get("coherence_status") == "coherence_lost":
-            base_stress += 0.3
+            base_stress += 0.2  # Reduced from 0.3
         if emotional_analysis.get("recursion_detected"):
-            base_stress += 0.2
+            base_stress += 0.1  # Reduced from 0.2
         if emotional_analysis.get("drift_detected"):
-            base_stress += 0.2
+            base_stress += 0.1  # Reduced from 0.2
             
-        # Gradually adjust stress level
-        self.stress_level = max(0.0, min(1.0, self.stress_level * 0.8 + base_stress * 0.2))
+        # Gradually adjust stress level with faster recovery
+        self.stress_level = max(0.0, min(1.0, self.stress_level * 0.7 + base_stress * 0.3))
 
     def get_past_interactions(self, limit: int = None) -> List[Dict]:
         """Get past interactions with optional limit"""
@@ -151,12 +151,12 @@ class Memory:
         ]
 
     def is_biometric_alert(self) -> bool:
-        """Check if biometric data indicates stress"""
+        """Check if biometric data indicates stress - MORE CONSERVATIVE"""
         current = self.get_current_biometrics()
         return (
-            current["hrv"] < 35 or 
-            current["heart_rate"] > 90 or 
-            self.stress_level > 0.7
+            current["hrv"] < 25 or          # Reduced from 35 - only very low HRV
+            current["heart_rate"] > 100 or  # Increased from 90 
+            self.stress_level > 0.85        # Increased from 0.7 - only very high stress
         )
 
     def get_memory_summary(self) -> Dict:

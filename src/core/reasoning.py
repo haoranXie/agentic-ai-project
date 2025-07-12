@@ -218,38 +218,51 @@ class Reasoning:
         return "neutral"
 
     def _detect_emotional_drift(self) -> Dict:
-        """Detect if emotional state is drifting between turns"""
-        if len(self.emotional_history) < 2:
+        """Detect if emotional state is drifting between turns - CONSERVATIVE"""
+        if len(self.emotional_history) < 3:  # Need at least 3 data points
             return {"drift_detected": False}
             
-        recent_emotions = [entry["state"] for entry in self.emotional_history[-3:]]
+        recent_emotions = [entry["state"] for entry in self.emotional_history[-4:]]  # Last 4 emotions
         
-        # Check for rapid emotional state changes
-        unique_emotions = set(recent_emotions)
-        if len(unique_emotions) >= 3:  # 3 different emotions in last 3 turns
+        # Only flag severe emotional volatility
+        # Check for rapid swings between extreme opposites
+        extreme_positive = ['happy']
+        extreme_negative = ['angry', 'anxious']
+        
+        extreme_swings = 0
+        for i in range(len(recent_emotions) - 1):
+            current = recent_emotions[i]
+            next_emotion = recent_emotions[i + 1]
+            
+            if ((current in extreme_positive and next_emotion in extreme_negative) or
+                (current in extreme_negative and next_emotion in extreme_positive)):
+                extreme_swings += 1
+        
+        # Only flag if multiple extreme swings in short period
+        if extreme_swings >= 2:
             return {
                 "drift_detected": True,
-                "drift_type": "rapid_change",
+                "drift_type": "severe_volatility",
                 "drift_pattern": recent_emotions
             }
-            
-        # Check for emotional oscillation (back and forth)
-        if len(recent_emotions) >= 3:
-            if recent_emotions[0] == recent_emotions[2] and recent_emotions[0] != recent_emotions[1]:
-                return {
-                    "drift_detected": True,
-                    "drift_type": "oscillation",
-                    "drift_pattern": recent_emotions
-                }
                 
         return {"drift_detected": False}
 
     def _detect_recursion(self, user_input: str) -> bool:
-        """Detect recursive thought patterns"""
+        """Detect recursive thought patterns - CONSERVATIVE APPROACH"""
         user_input_lower = user_input.lower()
         
-        # Check for direct recursion indicators
-        for indicator in self.recursion_indicators:
+        # Only trigger on explicit recursion language
+        strong_recursion_indicators = [
+            "keep thinking about this over and over",
+            "can't stop thinking about",
+            "stuck in my head",
+            "going in circles",
+            "same thoughts repeating"
+        ]
+        
+        # Check for direct strong recursion indicators
+        for indicator in strong_recursion_indicators:
             if indicator in user_input_lower:
                 self.recursion_patterns.append({
                     "pattern": indicator,
@@ -257,27 +270,54 @@ class Reasoning:
                     "timestamp": time.time()
                 })
                 return True
-                
-        # Check for repeated phrases across recent inputs
-        if len(self.conversation_history) >= 2:
+        
+        # More conservative phrase repetition check
+        if len(self.conversation_history) >= 3:
             recent_inputs = [entry["input"].lower() for entry in self.conversation_history[-3:]]
             
-            # Look for repeated key phrases (3+ words)
-            for i, input1 in enumerate(recent_inputs):
-                for j, input2 in enumerate(recent_inputs[i+1:], i+1):
-                    common_phrases = self._find_common_phrases(input1, input2)
-                    if common_phrases:
-                        return True
+            # Only flag if user repeats EXACT same core concern 3+ times
+            current_core = self._extract_core_concern(user_input_lower)
+            if current_core:
+                repetition_count = sum(1 for prev_input in recent_inputs[:-1] 
+                                     if current_core in prev_input)
+                if repetition_count >= 2:  # Same core concern in 3+ recent inputs
+                    return True
                         
         return False
 
+    def _extract_core_concern(self, text: str) -> str:
+        """Extract the core concern from user input"""
+        # Simple extraction - look for key worry phrases
+        concern_patterns = [
+            r"worried about (.+?)[\.\,\?]",
+            r"thinking about (.+?)[\.\,\?]",
+            r"concerned about (.+?)[\.\,\?]",
+            r"stressed about (.+?)[\.\,\?]"
+        ]
+        
+        for pattern in concern_patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1).strip()
+        
+        return None
+
     def _detect_contradictions(self, user_input: str) -> Optional[str]:
-        """Detect contradictory statements"""
+        """Detect contradictory statements - MUCH MORE CONSERVATIVE"""
         user_input_lower = user_input.lower()
         
-        for pattern, contradiction_type in self.contradiction_patterns:
+        # Only flag severe contradictions within the same sentence
+        severe_contradiction_patterns = [
+            (r"i'm (happy|great|good) but .*(terrible|awful|horrible)", "severe_emotional_contradiction"),
+            (r"everything is (fine|good|okay) but .*(falling apart|terrible|awful)", "severe_state_contradiction"),
+            (r"i (love|hate) .* but .* (hate|love)", "severe_emotional_flip")
+        ]
+        
+        for pattern, contradiction_type in severe_contradiction_patterns:
             if re.search(pattern, user_input_lower):
                 return contradiction_type
+                
+        return None
                 
         return None
 
@@ -312,7 +352,7 @@ class Reasoning:
             "total_turns": len(self.conversation_history),
             "emotional_progression": [entry["state"] for entry in self.emotional_history],
             "recursion_count": len(self.recursion_patterns),
-            "last_emotional_state": self.emotional_history[-1]["state"] if self.emotional_history else "unknown",
+            "last_emotional_state": self.emotional_history[-1]["state"] if self.emotional_history and len(self.emotional_history) > 0 else "unknown",
             "openai_enhanced": self.llm_available
         }
         
